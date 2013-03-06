@@ -143,3 +143,4 @@ stateTableContinuous = function(variableColumns
   }
   return(statesOut)
 }
+# version 2, hahahaha
