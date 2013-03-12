@@ -1,6 +1,6 @@
 ## this function aggregates the points data frame to an "n's" data frame for use in estimation.
 
-make_ns = function(points
+makeNs = function(points
                    ,nonsampled
                    ,quest
                    ,ref = states_reference

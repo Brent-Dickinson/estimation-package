@@ -6,7 +6,7 @@
 ## however, the indiv.R function gets rid of -3's at present.
 ## problems may result from how the code below recodes -2's.
 
-make_quest_all = function(quest = quest_11, nwosCycle = 2011)
+makeQuestAll = function(quest = quest_11, nwosCycle = 2011)
 {
   binary = function(x
                     ,label_neg3 = '-3'

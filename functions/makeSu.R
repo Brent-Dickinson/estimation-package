@@ -1,4 +1,4 @@
-make_su = function(quest = quest_su, plot = plot_su, ref = ref_su)
+makeSu = function(quest = quest_su, plot = plot_su, ref = ref_su)
 {
   states = unique(quest$QUEST_STATE)
   quest_expanded = data.frame(NULL)

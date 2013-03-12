@@ -1,4 +1,4 @@
-read.points = function()
+readPoints = function(datawd)
 {
   points_nrs = read.csv(paste(datawd, 'nrs point count.csv', sep = ''), stringsAsFactors = F)
   points_srs = read.csv(paste(datawd, 'srs point count.csv', sep = ''), stringsAsFactors = F)
