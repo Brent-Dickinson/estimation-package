@@ -39,7 +39,7 @@ stateTables = function(variableColumns
     stateName = stratumInfo$state_abbr[i]
     regionCd = stratumInfo$rpa_regionCd[i]
     regionName = stratumInfo$rpa_regionNm[i]
-    areaTotal = stratumInfo$A[i]
+    areaTotal = stratumInfo$AreaAcres[i]
     nTotal = stratumInfo$n_h[i]
     
     questSub1 = quest[quest[,stateVariable] == stateCd,]
@@ -132,6 +132,8 @@ stateTables = function(variableColumns
                                                   ,varOwnershipsInDomain = NA
                                                   ,acresInDomain = 0
                                                   ,varAcresInDomain = NA
+                                                  ,acresInDomainSpecial = NA
+                                                  ,varAcresInDomainSpecial = NA
                                                   ,meanAcresInDomain = NA
                                                   ,varMeanAcresInDomain = NA
                                                   ,covAcresOwnershipsInDomain = NA
@@ -205,6 +207,36 @@ stateTables = function(variableColumns
                                                    ,domain2 = populationIndicator)
               varProportionOwnershipsInDomain = varianceRatio(ownershipsInDomain, ownershipsInPopulation, varOwnershipsInDomain, varOwnershipsInPopulation, covOwnershipsDomainPopulation)
               
+              acresInDomainSpecial = NA
+              varAcresInDomainSpecial = NA
+              
+              if(table == "table_02__all_private")
+              {
+                nPf = stratumInfo$n_pf[i]
+                propAcres = nPf/nTotal
+                responseRate = stratumInfo$urr_fia_pf[i]
+                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
+                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+              }
+              
+              if(table == "table_02__fam_other" & level == "row_01_Family")
+              {
+                nFf = stratumInfo$n_ff[i]
+                propAcres = nFf/nTotal
+                responseRate = stratumInfo$urr_fia_pf[i]
+                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
+                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+              }
+                            
+              if(table == "table_02__fam_other" & level == "row_02_Other private")
+              {
+                nPfNonfam = stratumInfo$n_pf_nonfam[i]
+                propAcres = nPfNonfam/nTotal
+                responseRate = stratumInfo$urr_fia_pf[i]
+                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
+                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+              }
+
               levelOut = rbind(levelOut, data.frame(table = table
                                                     ,row = level
                                                     ,stateCd = stateCd
@@ -215,6 +247,8 @@ stateTables = function(variableColumns
                                                     ,varOwnershipsInDomain = varOwnershipsInDomain
                                                     ,acresInDomain = acresInDomain
                                                     ,varAcresInDomain = varAcresInDomain
+                                                    ,acresInDomainSpecial = acresInDomainSpecial
+                                                    ,varAcresInDomainSpecial = varAcresInDomainSpecial
                                                     ,meanAcresInDomain = meanAcresInDomain
                                                     ,varMeanAcresInDomain = varMeanAcresInDomain
                                                     ,covAcresOwnershipsInDomain = covAcresOwnershipsInDomain

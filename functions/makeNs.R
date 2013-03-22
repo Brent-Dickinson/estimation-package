@@ -1,11 +1,12 @@
 ## this function aggregates the points data frame to an "n's" data frame for use in estimation.
 
 makeNs = function(points
-                   ,nonsampled
-                   ,quest
-                   ,ref = states_reference
-                   ,nwosCycle = 2011
-                   ,type = 'generic')
+                  ,nonsampled
+                  ,quest
+                  ,area = areaNew
+                  ,ref = refState
+                  ,nwosCycle = 2011
+                  ,type = 'generic')
 {
   if(nwosCycle == 2011)
   {
@@ -23,9 +24,6 @@ makeNs = function(points
     famCodes = 45
     nonFamCodes = 41:44
   }
-  
-  points = points[!points$STATECD %in% c(40, 48),]
-  areaNew = areaNew[!areaNew$STATECD %in% c(40, 48),]
   
   ns = data.frame(state = unique(points$STATECD[points$STATECD != 11]), stringsAsFactors = F)
   ns = data.frame(state = ns[order(as.numeric(ns$state)),], stringsAsFactors = F)
@@ -52,24 +50,24 @@ makeNs = function(points
       if(nrow(nonsampled_i) == 0) ns$RSCD[i] = 22
       else ns$RSCD[i] = names(summary(factor(nonsampled_i$RSCD)))  
     }
+    # stratum area (see /InputData/Documentation/LandAreaCounty-Census.txt for how these data were obtained)
+    ns$AreaAcres[i] = area$AreaAcres[area$state == state_i]
     # stratum total points (all FIA points, sampled or not):
-    ns$n_h[i] = sum(points_i$count)
+    ns$n_h[i] = nrow(points_i)
     # stratum total private forest points (FIA sampled only):
-    ns$n_pf[i] = sum(points_i$count[points_i$OWNCD %in% c(41:45) & points_i$LANDCLCD == 1])
+    ns$n_pf[i] = nrow(points_i[points_i$OWNCD %in% c(41:45) & points_i$COND_STATUS_CD == 1,])
     # stratum total private, non-family, forest points (FIA sampled only):
-    ns$n_pf_nonfam[i] = sum(points_i$count[points_i$OWNCD %in% c(41:44) & points_i$LANDCLCD == 1])
+    ns$n_pf_nonfam[i] = nrow(points_i[points_i$OWNCD %in% c(41:44) & points_i$COND_STATUS_CD == 1,])
     # stratum total family forest points (FIA sampled only):
-    ns$n_ff[i] = sum(points_i$count[points_i$OWNCD == 45 & points_i$LANDCLCD == 1], na.rm = T)
+    ns$n_ff[i] = nrow(points_i[points_i$OWNCD == 45 & points_i$COND_STATUS_CD == 1,])
     # stratum points from responding private forest ownerships:
     ns$n_pf_resp[i] = sum(quest_i$POINT_COUNT)
     # stratum points from responding private, non-family, forest ownerships:
     ns$n_pf_nonfam_resp[i] = sum(quest_i$POINT_COUNT[quest_i[,ownVariable] %in% nonFamCodes])
     # stratum points from responding family forest ownerships:
     ns$n_ff_resp[i] = sum(quest_i$POINT_COUNT[quest_i[,ownVariable] %in% famCodes])
-    # stratum total area in acres:
-    ns$A[i] = areaNew$ACRES[areaNew$STATECD == ns$state[i]]
     # stratum FIA undifferentiated non-sampled points:
-    ns$nons[i] = sum(points_i$count[points_i$LANDCLCD == 5])
+    ns$nons[i] = nrow(points_i[points_i$COND_STATUS_CD == 5,])
     # get FIA private forest point "response rate" by region, since each region has different stratum classifications for non-sampled points:
     # Rocky Mountain:
     if(ns$RSCD[i] == 22)
@@ -78,7 +76,7 @@ makeNs = function(points
       if(type == 'generic')
       {
         ns$n_pf_nons[i] = NA
-        ns$urr_fia_pf[i] = sum(points_i$count[points_i$OWNCD %in% 41:45 & points_i$LANDCLCD != 5])/sum(points_i$count[points_i$OWNCD %in% 41:45])
+        ns$urr_fia_pf[i] = nrow(points_i[points_i$OWNCD %in% 41:45 & points_i$COND_STATUS_CD != 5,])/nrow(points_i[points_i$OWNCD %in% 41:45,])
       }
       else
       {
@@ -87,11 +85,12 @@ makeNs = function(points
       }
     }
     # North Central and Northeastern:
-    if(ns$RSCD[i] == 23)
+    if(ns$RSCD[i] %in% 23:34)
     {
       ns$n_pf_nons[i] = nrow(nonsampled_i[str_detect(nonsampled_i$STRATUM_DESCR, '0 -') == F &
-                                          str_detect(nonsampled_i$STRATUM_DESCR, '6 -') == F &
-                                          nonsampled_i$PLOT_NONSAMPLE_REASN_CD == 2,])
+                                            str_detect(nonsampled_i$STRATUM_DESCR, '6 -') == F &
+                                            str_detect(nonsampled_i$STRATUM_DESCR, ignore.case('non')) == F &
+                                            nonsampled_i$PLOT_NONSAMPLE_REASN_CD == 2,])
       ns$urr_fia_pf[i] = ns$n_pf[i]/(ns$n_pf[i] + ns$n_pf_nons[i])
     }
     # Pacific Northwest & Alaska:
@@ -101,7 +100,7 @@ makeNs = function(points
       if(type == 'generic')
       {
         ns$n_pf_nons[i] = NA
-        ns$urr_fia_pf[i] = sum(points_i$count[points_i$OWNCD %in% 41:45 & points_i$LANDCLCD != 5])/sum(points_i$count[points_i$OWNCD %in% 41:45])
+        ns$urr_fia_pf[i] = nrow(points_i[points_i$OWNCD %in% 41:45 & points_i$COND_STATUS_CD != 5,])/nrow(points_i[points_i$OWNCD %in% 41:45,])
       }
       else
       {
@@ -117,18 +116,10 @@ makeNs = function(points
     # South:
     if(ns$RSCD[i] == 33)
     {
-      ns$n_pf_nons[i] = nrow(nonsampled_i[(str_detect(nonsampled_i$STRATUM_DESCR, 'PRIVATE') &
-                                          (str_detect(nonsampled_i$STRATUM_DESCR, '51% -') | str_detect(nonsampled_i$STRATUM_DESCR, '76% -'))) |
+      ns$n_pf_nons[i] = nrow(nonsampled_i[(str_detect(nonsampled_i$STRATUM_DESCR, '51% -') | str_detect(nonsampled_i$STRATUM_DESCR, '76% -')) |
                                             (nonsampled_i$STRATUM_DESCR == 'FOREST' & nonsampled_i$PLOT_NONSAMPLE_REASN == 2),])
       ns$urr_fia_pf[i] = ns$n_pf[i]/(ns$n_pf[i] + ns$n_pf_nons[i])
-    }
-    
+    }    
   }
-  # intensified CT points not in the FIA data. this fix is not completed and is only necessary if the intensified sample is not removed.
-  #if(any(ns$state == 9))
-  #{
-  #ns$n_h[ns$state == 9] = ns$n_h[ns$state == 9] - 82 + 2000
-  #ns$n_p[ns$state == 9] = 1077
-  #}  
   return(ns)
 }

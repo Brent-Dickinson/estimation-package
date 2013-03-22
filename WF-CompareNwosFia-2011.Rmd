@@ -1,0 +1,72 @@
+Comparing 2011 NWOS Area Estimates to 2010 FIA Area Estimates
+========================================================
+
+Header 2
+-------------------------
+The first few steps just mirror those of "WF-NWOS-tables.Rmd". Just bringing in data for the North and South, because that's all we have for 2010 FIA estimates as of 19-Mar-2013.
+
+```{r}
+source(purl("exp.Rmd"))
+ns_NS11 = ns_N11[ns_N11$rpa_regionCd %in% 1:2,]
+
+```
+
+```{r}
+t23State_N11 = stateTables(385:387
+                     ,questAll_N11
+                     ,ns_N11
+                     ,factor(rep('population', nrow(questAll_N11))))
+t433State_N11 = stateTables(c(388:ncol(questAll_N11), 379:380, 382:384)
+                        ,questAll_N11
+                        ,ns_N11
+                        ,questAll_N11$population__family)
+tAgeState_N11 = stateTableContinuous(c(14, 273:274)
+                                 ,questAll_N11
+                                 ,ns_N11
+                                 ,questAll_N11$population__family)
+t433State_N11 = rbind(t433State_N11, tAgeState_N11)
+```
+
+```{r}
+t23Region_N11 = regionTables(t23State_N11[t23State_N11$stateCd != 2,])
+t433Region_N11 = regionTables(t433State_N11[t433State_N11$stateCd != 2,])
+```
+
+```{r}
+AreaFia = read.csv('e:/brent/nwos/fiadata/fia nrs 2010.csv')
+summary(factor(AreaFia$OWNER_CLASS))
+AreaSummaryState = aggregate(AreaFia$ESTIMATED_VALUE, by = list(AreaFia$OWNER_CLASS, AreaFia$LOCATION_NM), FUN = sum)
+AreaSummaryState$STATECD = refState$STATECD[match(as.character(AreaSummaryState$Group.2), as.character(refState$STATE_NAME))]
+AreaSummaryState = AreaSummaryState[!AreaSummaryState$STATECD %in% c(20,31,38,46),]
+AreaSummaryNorth = aggregate(AreaSummaryState$x, by = list(AreaSummaryState$Group.1), FUN = sum)
+AreaSummaryNorth[nrow(AreaSummaryNorth) + 1,] = c("AllPrivate", sum(AreaSummaryNorth$x[str_detect(AreaSummaryNorth$Group.1, 'Private-')]))
+```
+
+```{r}
+makeFiaSub = function(fiaData, string, stringFalse = "definitelyWontBeFound")
+{
+  fiaSub = fiaData[str_detect(fiaData$Group.1, string) & str_detect(fiaData$Group.1, stringFalse) == F,]
+  fiaSub = aggregate(fiaSub$x, list(fiaSub$Group.2), sum)
+  return(fiaSub)
+}
+fiaPrivate = makeFiaSub(AreaSummaryState, "Private-")
+fiaFamily = makeFiaSub(AreaSummaryState, "Private- Individual")
+fiaPrivOther = makeFiaSub(AreaSummaryState, "Private-", "Private- Individual")
+
+nwosFamily = t23State_N11[t23State_N11$row == "row_01_Family",]
+nwosPrivate = t23State_N11[t23State_N11$row == "row_03_Total Private",]
+nwosPrivOther = t23State_N11[t23State_N11$row == "row_02_Other private",]
+
+makeCompare = function(fia, nwos)
+{
+  compare = data.frame(state = nwos$stateNm
+                       ,fia = fia$x
+                       ,nwos = nwos$acresInDomainSpecial)
+  compare$dif = compare$fia - compare$nwos
+  compare$pctDif = round(compare$dif/compare$fia*100, digits = 2)
+  return(compare)
+}
+compareAreaPrivate = makeCompare(fiaPrivate, nwosPrivate)
+compareAreaFamily = makeCompare(fiaFamily, nwosFamily)
+comparePrivOther = makeCompare(fiaPrivOther, nwosPrivOther)
+```
