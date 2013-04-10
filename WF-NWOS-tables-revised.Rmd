@@ -1,0 +1,102 @@
+NWOS Estimation, Revised Once Again
+========================================================
+
+During the week of Monday 18-Mar-13, we decided that the best way to handle both FIA and NWOS 
+non-response might be to "calibrate" all estimates to FIA's estimates of area in the population of interest. I discovered, with unbridled dismay, that this is algebraically equivalent to the "old" estimators as presented (albeit incorrectly) in Butler et al 2005. See Dropbox/NWOS/brents nwos stuff/Documentation/EstimationCode-2013-03-25.docx for details.
+
+```{r functions}
+functions = list("MakeQuestAll"
+                 ,"MakeAreaFia"
+                 ,"StateTables"
+                 ,"HheCore"
+                 ,"CovCore"
+                 ,"VarianceRatio"
+                 ,"TweakQuest"
+                 ,"RegionTables"
+                 ,"StateTableContinuous"
+                 ,"CalcSffi")
+functions = sapply(functions, function(x) paste("functions/", x, ".R", sep = ""))
+for(i in 1:length(functions)){source(functions[i])
+                              rm(i)}
+```
+
+```{r questAll}
+TweakQuest()
+debugonce(MakeQuestAll)
+QuestAll_11 = MakeQuestAll(quest = quest_11, NwosCycle = 2011)
+QuestAll_06 = MakeQuestAll(quest = quest_06, NwosCycle = 2006)
+AreaFia_11 = MakeAreaFia()[[1]]
+AreaFia_06 = MakeAreaFia()[[2]]
+```
+
+```{r}
+t23State_11 = StateTables(VariableColumns = which(grepl("allprivate", names(QuestAll_11)) & grepl("continuous", names(QuestAll_11)) == F)
+                          ,Quest = QuestAll_11
+                          ,PopulationOfInterest = "AllPrivate"
+                          ,AreaFia = AreaFia_11
+                          ,NwosCycle = 2011)
+tContState_11 = StateTableContinuous(VariableColumns = which(grepl("continuous", names(QuestAll_11)) & grepl("allprivate", names(QuestAll_11)) == F)
+                                      ,Quest = QuestAll_11
+                                      ,DomainOfInterest = rep("domain", nrow(QuestAll_11))
+                                      ,AreaFia = AreaFia_11
+                                      ,NwosCycle = 2011)
+t433State_11 = StateTables(which(grepl("__", names(QuestAll_11)) & grepl("continuous", names(QuestAll_11)) == F & grepl("allprivate", names(QuestAll_11)) == F)
+                          ,Quest = QuestAll_11
+                          ,PopulationOfInterest = "Family"
+                          ,AreaFia = AreaFia_11
+                          ,NwosCycle = 2011)
+t433State_11 = rbind(t433State_11, tContState_11)
+t23Region_11 = RegionTables(t23State_11)
+t433Region_11 = RegionTables(t433State_11)
+wd = "c:/users/ffrc_brent/dropbox/nwos/brents nwos stuff/output data/nwos tables/"
+write.csv(t23Region_11, paste(wd, "Region_2011_AllPrivate_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+write.csv(t23State_11, paste(wd, "State_2011_AllPrivate_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+write.csv(t433Region_11, paste(wd, "Region_2011_Family_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+write.csv(t433State_11, paste(wd, "State_2011_Family_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+```
+
+
+```{r}
+t23State_06 = StateTables(VariableColumns = which(grepl("table_02", names(QuestAll_06)) | grepl("table_03", names(QuestAll_06)))
+                          ,Quest = QuestAll_06
+                          ,PopulationOfInterest = "AllPrivate"
+                          ,AreaFia = AreaFia_06
+                          ,NwosCycle = 2006)
+tContState_06 = StateTableContinuous(VariableColumns = which(names(QuestAll_06) %in% c("table_NA__tenure_continuous"))
+                                      ,Quest = QuestAll_06
+                                      ,DomainOfInterest = rep("domain", nrow(QuestAll_06))
+                                      ,AreaFia = AreaFia_06
+                                      ,NwosCycle = 2006)
+t433State_06 = StateTables(which(grepl("table_02", names(QuestAll_06)) == F & grepl("continuous", names(QuestAll_06)) == F & grepl("table_03", names(QuestAll_06)) == F & grepl("table_", names(QuestAll_06)) == T)
+                          ,Quest = QuestAll_06
+                          ,PopulationOfInterest = "Family"
+                          ,AreaFia = AreaFia_06
+                          ,NwosCycle = 2006)
+t433State_06 = rbind(t433State_06, tContState_06)
+```
+
+Special tables for Marla:
+```{r}
+t433State_06 = StateTables(250
+                          ,Quest = QuestAll_06
+                          ,PopulationOfInterest = "Family"
+                          ,AreaFia = AreaFia_06[AreaFia_06$StateCode == 1,]
+                          ,NwosCycle = 2006)
+
+```
+
+
+```{r}
+t23Region_06 = RegionTables(t23State_06)
+t433Region_06 = RegionTables(t433State_06)
+
+```
+
+```{r}
+wd = "c:/users/ffrc_brent/dropbox/nwos/brents nwos stuff/output data/nwos tables/"
+write.csv(t23Region_06, paste(wd, "Region_2006_2-3_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+write.csv(t23State_06, paste(wd, "State_2006_2-3_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+
+write.csv(t433Region_06, paste(wd, "Region_2006_4-33_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+write.csv(t433State_06, paste(wd, "State_2006_4-33_", substr(Sys.time(), 1, 10), ".csv", sep = ""), row.names = F)
+```

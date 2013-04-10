@@ -1,283 +1,382 @@
-stateTables = function(variableColumns
-                       ,quest
-                       ,stratumInfo
-                       ,populationOfInterest
-                       ,nwosCycle = 2011)
+StateTables = function(VariableColumns
+                       ,Quest
+                       ,PopulationOfInterest
+                       ,AreaFia
+                       ,NwosCycle
+                       ,DomainOfInterest = 1)
 {
-  quest = cbind(quest, populationOfInterest = populationOfInterest)
-  if(nwosCycle == 2011)
-  {
-    areaName = 'AC_WOOD'
-    variableAcreName = areaName
-    stateVariable = 'QUEST_STATE'
-    ownVariable = 'OWNTYPE'
-    famCodes = 1:4
-    nonFamCodes = 5:6
-  }
-  if(nwosCycle == 2006)
-  {
-    areaName = 'ACRES_IN_EU'
-    variableAcreName = 'ACRES_IN_STATE'
-    stateVariable = 'STATECD'
-    ownVariable = 'OWNER_CLASS_ADJ'
-    famCodes = 45
-    nonFamCodes = 41:44
-  }
-  quest = quest[quest[,areaName] >= 1,]
+  library(plyr)
   
-  # string manipulation for table names in output:
-  tablesMicro = names(quest)[variableColumns]
-  splitTables = tablesMicro[grepl('.', tablesMicro, fixed = T)]
-  tablesMicro[grepl('.', tablesMicro, fixed = T)] = substr(splitTables, 1, regexpr('.', splitTables, fixed = T) - 1)
+  # There should only ever be 1 of 3 populations of interest:
+  if(!PopulationOfInterest %in% c("Family", "AllPrivate", "Nonfam")) stop("PopulationOfInterest needs to be one of 'Family' or 'AllPrivate' or 'Nonfam'")
   
-  statesOut = data.frame(NULL)
-  for(i in 1:nrow(stratumInfo))
+  # Tack on DomainOfInterest:
+  if(length(DomainOfInterest) == 1)
   {
+  }
+  else
+  {
+    DomainOfInterest = ifelse(as.character(DomainOfInterest) == "domain", 1, 0)
+  }
+  
+  Quest = cbind(Quest, DomainOfInterest = DomainOfInterest)
+  
+  # Because format of Quest depends on the NwosCycle, several variables need to be defined:
+  if(NwosCycle == 2011)
+  {
+    AreaName = 'AC_WOOD'
+    VariableAcreName = AreaName
+    StateVariable = 'QUEST_STATE'
+    OwnVariable = 'OWNTYPE'
+    FamCodes = 1:4
+    NonFamCodes = 5:6
+  }
+  if(NwosCycle == 2006)
+  {
+    AreaName = 'ACRES_IN_STATE'
+    VariableAcreName = 'ACRES_IN_STATE'
+    StateVariable = 'STATECD'
+    OwnVariable = 'OWNER_CLASS_ADJ'
+    FamCodes = 45
+    NonFamCodes = 41:44
+  }
+  
+  # We can only use observations with known ownership size and type:
+  Quest = Quest[Quest[,AreaName] >= 1 & 
+                  Quest[,OwnVariable] > 0 &
+                  is.na(Quest[,OwnVariable]) == F,]
+  
+  # Subset Quest and AreaFia to just family forest ownerships if that is the population of interest:
+  if(PopulationOfInterest == "Family")
+  {
+    Quest = Quest[Quest[,OwnVariable] %in% FamCodes,]
+    AreaFiaSub = AreaFia[AreaFia$OwnerClass == "Family",]
+  }
+  # Otherwise it means we're doing tables 2-3 and will be using all 3 populations of interest:
+  else
+  {
+    AreaFiaSub = ddply(AreaFia, .(StateCode = as.numeric(as.character(StateCode))), numcolwise(sum))
+    AreaFiaSub$StratumName = AreaFia$StratumName[match(AreaFiaSub$StateCode, AreaFia$StateCode)]
+    AreaFiaSub$RegionName = AreaFia$RegionName[match(AreaFiaSub$StateCode, AreaFia$StateCode)]
+    AreaFiaFam = AreaFia[AreaFia$OwnerClass == "Family",]
+    AreaFiaNonfam = AreaFia[AreaFia$OwnerClass == "PrivateNonfam",]
+  }
+  
+  # String manipulation for Table and Row names in output:
+  TablesMicro = names(Quest)[VariableColumns]
+  SplitTables = TablesMicro[grepl('.', TablesMicro, fixed = T)]
+  TablesMicro[grepl('.', TablesMicro, fixed = T)] = substr(SplitTables, 1, regexpr('.', SplitTables, fixed = T) - 1)
+  
+  # Define empty output data.frame for stratum level estimate groupings:
+  StatesOut = data.frame(NULL)
+  
+  # Each row in AreaFiaSub represents a stratum (usually a state).
+  # We will generate estimates for each one:
+  for(i in 1:nrow(AreaFiaSub))
+  {
+    # For estimating total time of calculations:
     t0 = Sys.time()
-    # pull necessary data for each stratum:
-    stateCd = stratumInfo$state[i]
-    stateName = stratumInfo$state_abbr[i]
-    regionCd = stratumInfo$rpa_regionCd[i]
-    regionName = stratumInfo$rpa_regionNm[i]
-    areaTotal = stratumInfo$AreaAcres[i]
-    nTotal = stratumInfo$n_h[i]
     
-    questSub1 = quest[quest[,stateVariable] == stateCd,]
-    # overall unit response rate:
-    responseRateFIA = questSub1$responseRateFIA
-    responseRateNWOS = questSub1$responseRateNWOS
-    responseRateUnit = responseRateFIA*responseRateNWOS
+    # Pull necessary info for each stratum:
+    StateCode = as.character(AreaFiaSub$StateCode[i])
+    StateName = as.character(AreaFiaSub$StratumName[i])
+    RegionCode = as.character(AreaFiaSub$RegionCode[i])
+    RegionName = as.character(AreaFiaSub$RegionName[i])
+    AreaFia_i = AreaFiaSub$Area[i]
+    AreaVarianceFia_i = AreaFiaSub$AreaVariance[i]
     
-    # incorporate missing OWNTYPE's into the unit response rate and pull them from sample:
-    if(nwosCycle == 2011)
+    # If family is not the population of interest, it meas we're doing tables 2-3.
+    # We'll need to define FIA-estimated areas for each of the 3 populatoins:
+    if(PopulationOfInterest != "Family")
     {
-      dNeg1 = ifelse(questSub1[,ownVariable] == -1, 0, 1)
-      xNeg1 = sum(questSub1$POINT_COUNT*dNeg1/questSub1[,areaName])
-      xBase = sum(questSub1$POINT_COUNT/questSub1[,areaName])
-      questSub1$responseRateUnit = responseRateUnit*xNeg1/xBase
-      questSub1 = questSub1[questSub1[,ownVariable] != -1,]
+      AreaFiaNonfam_i = AreaFiaNonfam$Area[i]
+      AreaVarianceFiaNonfam_i = AreaFiaNonfam$AreaVariance[i]
+      AreaFiaFam_i = AreaFiaFam$Area[i]
+      AreaVarianceFiaFam_i = AreaFiaFam$AreaVariance[i]
     }
     
-    # get population numbers before further reducing questSub1
-    pointCountP = questSub1$POINT_COUNT
-    areaIndividualP = questSub1[,areaName]
-    variableAcresP = questSub1[,variableAcreName]
-    variableOwnershipsP = rep(1, length(pointCountP))
+    # Subset Quest to observations in stratum i:
+    QuestSubP = Quest[Quest[,StateVariable] == StateCode,]
+
+    # Define empty data.frame for Table-level estimate groupings:
+    VariableColumnsOut = data.frame(NULL)
     
-    populationIndicator = ifelse(questSub1$populationOfInterest == 'population', 1, 0)
-    populationAcresOutput = hheCore(areaTotal = areaTotal
-                                    ,nTotal = nTotal
-                                    ,responseRate = questSub1$responseRateUnit
-                                    ,pointCount = pointCountP
-                                    ,areaIndividual = areaIndividualP
-                                    ,variable = variableAcresP
-                                    ,domain = populationIndicator)
-    acresInPopulation = populationAcresOutput$yHat
-    varAcresInPopulation = populationAcresOutput$VyHat
-    populationOwnershipsOutput = hheCore(areaTotal = areaTotal
-                                         ,nTotal = nTotal
-                                         ,responseRate = questSub1$responseRateUnit
-                                         ,pointCount = pointCountP
-                                         ,areaIndividual = areaIndividualP
-                                         ,variable = variableOwnershipsP
-                                         ,domain = populationIndicator)
-    ownershipsInPopulation = populationOwnershipsOutput$yHat
-    varOwnershipsInPopulation = populationOwnershipsOutput$VyHat
-    
-    variableColumnsOut = data.frame(NULL)
-    for(j in variableColumns)
+    # Characteristics of interest are levels of a factor variable.
+    # Go through j factor variables from VariableColumns:
+    for(j in VariableColumns)
     {
-      if(is.factor(questSub1[,j]) == F) stop(paste('fix make_quest_all():', names(quest)[j], 'not a factor'))
-      questSub = questSub1
-      # pull out -3's from sample (they were not asked that question) and create weighted item response rate:
-      if(any(questSub[,j] == -3)) 
-      {
-        # just use shortcut equations
-        dNeg3 = ifelse(questSub[,j] == -3, 0, 1)
-        xNeg3 = sum(questSub$POINT_COUNT*dNeg3/questSub[,areaName])
-        xBase = sum(questSub$POINT_COUNT/questSub[,areaName])
-        questSub$responseRateItem = xNeg3/xBase
-        questSub = questSub[questSub[,j] != -3,]
-      }
-      else
-      {
-        questSub$responseRateItem = rep(1, nrow(questSub))
-      }
+      # It needs to be a factor:
+      if(is.factor(QuestSubP[,j]) == F) stop(paste('fix makeQuestAll():', names(Quest)[j], 'not a factor'))
       
-      # set up components using new questSub
-      domain = questSub[,j]
-      allLevels = names(summary(domain))
-      pointCount = questSub$POINT_COUNT
-      areaIndividual = questSub[,areaName]
-      variableAcres = questSub[,variableAcreName]
-      variableOwnerships = rep(1, length(pointCount))
+      # Further subset QuestSubP to eliminate ownerships which were not asked the question:
+      QuestSub = QuestSubP[QuestSubP[,j] != -3 & QuestSubP$DomainOfInterest != -3,]
       
-      table = tablesMicro[variableColumns == j]
-      levelOut = data.frame(NULL)
-      for(L in 1:length(allLevels))
+      # Get population estimates. These will be different for different variables because of the -3 subsetting.
+      # Set up estimator components using new questSub:
+      Domain = QuestSub[,j]
+      PointCount = QuestSub$POINT_COUNT
+      AreaIndividual = QuestSub[,AreaName]
+      VariableAcres = QuestSub[,VariableAcreName]
+      VariableOwnerships = rep(1, length(PointCount))
+            
+      # Hhecore is the basic HHE function
+      PopulationAcresOutput = HheCore(AreaFia = AreaFia_i
+                                      ,AreaVarianceFia = AreaVarianceFia_i
+                                      ,PointCount = PointCount
+                                      ,AreaIndividual = AreaIndividual
+                                      ,Variable = VariableAcres
+                                      ,Domain = rep(1, length(PointCount)))
+      AcresInPopulation = PopulationAcresOutput$yHat
+      VarAcresInPopulation = PopulationAcresOutput$VyHat
+      PopulationOwnershipsOutput = HheCore(AreaFia = AreaFia_i
+                                           ,AreaVarianceFia = AreaVarianceFia_i
+                                           ,PointCount = PointCount
+                                           ,AreaIndividual = AreaIndividual
+                                           ,Variable = VariableOwnerships
+                                           ,Domain = rep(1, length(PointCount)))
+      OwnershipsInPopulation = PopulationOwnershipsOutput$yHat
+      VarOwnershipsInPopulation = PopulationOwnershipsOutput$VyHat
+      
+      # Define the Table of estimate groupings from string manipulation above:
+      Table = TablesMicro[VariableColumns == j]
+      
+      # Define a vector of all the factor levels of the factor variable j:
+      AllLevels = names(summary(Domain))
+      
+      # For each level of the jth factor variable, we need acre and ownership estimates.
+      # Define empty data.frame for Row-level estimates:
+      LevelOut = data.frame(NULL)
+      
+      # Go through L levels of the jth factor variable:
+      for(L in 1:length(AllLevels))
       {
-        level = allLevels[L]
-        if(level != -3)
+        # Define the particular level L of factor variable j:
+        Level = AllLevels[L]
+        
+        # We won't generate estimates for those not asked the question:
+        if(Level != -3)
         {
-          if(nrow(questSub) == 0 & level != 'ignore')
+          # If the level is "ignore", we aren't interested in estimates (see MakeQuestAll).
+          # In some cases, nobody will have answered the question with level L.
+          # In that case we still want a Row so that Tables match up, but the estimate is 0:
+          if(nrow(QuestSub) == 0 & Level != 'ignore')
           {
-            # create a dummy for inclusion in the population of interest:
-            levelOut = rbind(levelOut, data.frame(table = table
-                                                  ,row = level
-                                                  ,stateCd = stateCd
-                                                  ,stateNm = stateName
-                                                  ,regionCd = regionCd
-                                                  ,regionNm = regionName
-                                                  ,ownershipsInDomain = 0
-                                                  ,varOwnershipsInDomain = NA
-                                                  ,acresInDomain = 0
-                                                  ,varAcresInDomain = NA
-                                                  ,acresInDomainSpecial = NA
-                                                  ,varAcresInDomainSpecial = NA
-                                                  ,meanAcresInDomain = NA
-                                                  ,varMeanAcresInDomain = NA
-                                                  ,covAcresOwnershipsInDomain = NA
-                                                  ,acresInPopulation = acresInPopulation
-                                                  ,varAcresInPopulation = varAcresInPopulation
-                                                  ,proportionAcresInDomain = 0
-                                                  ,varProportionAcresInDomain = NA
-                                                  ,covAcresDomainPopulation = NA
-                                                  ,ownershipsInPopulation = ownershipsInPopulation
-                                                  ,varOwnershipsInPopulation = varOwnershipsInPopulation
-                                                  ,proportionOwnershipsInDomain = 0
-                                                  ,varProportionOwnershipsInDomain = NA
-                                                  ,covOwnershipsDomainPopulation = NA))             
+            LevelOut = rbind(LevelOut, data.frame(Table = Table
+                                                  ,Row = Level
+                                                  ,StateCode = StateCode
+                                                  ,StateName = StateName
+                                                  ,RegionCode = RegionCode
+                                                  ,RegionName = RegionName
+                                                  ,OwnershipsInDomain = 0
+                                                  ,VarOwnershipsInDomain = NA
+                                                  ,AcresInDomain = 0
+                                                  ,VarAcresInDomain = NA
+                                                  ,MeanAcresInDomain = 0
+                                                  ,VarMeanAcresInDomain = NA
+                                                  ,CovAcresOwnershipsInDomain = NA
+                                                  ,OwnershipsInPopulation = OwnershipsInPopulation
+                                                  ,VarOwnershipsInPopulation = VarOwnershipsInPopulation
+                                                  ,AcresInPopulation = AcresInPopulation
+                                                  ,VarAcresInPopulation = VarAcresInPopulation
+                                                  ,CovAcresDomainPopulation = NA
+                                                  ,CovOwnershipsDomainPopulation = NA
+                                                  ,OwnNR = 0
+                                                  ,vOwnNR = NA
+                                                  ,AcNR = 0
+                                                  ,vAcNR = NA
+                                                  ,PropOwnInDomain = NA
+                                                  ,VarPropOwnInDomain = NA
+                                                  ,PropAcInDomain = NA
+                                                  ,VarPropAcInDomain = NA
+                                                  ,ContinuousInDomain = NA
+                                                  ,VarContinuousInDomain = NA
+                                                  ,MeanContinuousOwn = NA
+                                                  ,VarMeanContinuousOwn = NA
+                                                  ,CovContinuousOwn = NA
+                                                  ,MeanContinuousAcre = NA
+                                                  ,VarMeanContinuousAcre = NA
+                                                  ,CovContinuousAcre = NA))             
           }
+          
+          # Otherwise, we'll proceed with regular estimation:
           else
           {
-            if(level != 'ignore')
+            # Again, we aren't interested in level "ignore" (see MakeQuestAll):
+            if(Level != 'ignore')
             {
-              populationIndicator = ifelse(questSub$populationOfInterest == 'population', 1, 0)
-              # create a dummy for each domain of interest:
-              domainIndicator = ifelse(domain == level, 1, 0)
-              acresOutput = hheCore(areaTotal = areaTotal
-                                    ,nTotal = nTotal
-                                    ,responseRate = questSub$responseRateUnit*questSub$responseRateItem
-                                    ,pointCount = pointCount
-                                    ,areaIndividual = areaIndividual
-                                    ,variable = variableAcres
-                                    ,domain = populationIndicator*domainIndicator)
-              acresInDomain = acresOutput$yHat
-              varAcresInDomain = acresOutput$VyHat
-              ownershipsOutput = hheCore(areaTotal = areaTotal
-                                         ,nTotal = nTotal
-                                         ,responseRate = questSub$responseRateUnit*questSub$responseRateItem
-                                         ,pointCount = pointCount
-                                         ,areaIndividual = areaIndividual
-                                         ,variable = variableOwnerships
-                                         ,domain = populationIndicator*domainIndicator)
-              ownershipsInDomain = ownershipsOutput$yHat
-              varOwnershipsInDomain = ownershipsOutput$VyHat
-              covAcresOwnershipsInDomain = cov1(areaTotal = areaTotal
-                                                ,nTotal = nTotal
-                                                ,responseRate = questSub$responseRateUnit*questSub$responseRateItem
-                                                ,pointCount = pointCount
-                                                ,areaIndividual = areaIndividual
-                                                ,variable1 = variableAcres
-                                                ,variable2 = variableOwnerships
-                                                ,domain1 = populationIndicator*domainIndicator
-                                                ,domain2 = populationIndicator*domainIndicator)
-              meanAcresInDomain = acresInDomain/ownershipsInDomain
-              varMeanAcresInDomain = varianceRatio(acresInDomain, ownershipsInDomain, varAcresInDomain, varOwnershipsInDomain, covAcresOwnershipsInDomain)
-              proportionAcresInDomain = acresInDomain/acresInPopulation
-              covAcresDomainPopulation = cov1(areaTotal = areaTotal
-                                              ,nTotal = nTotal
-                                              ,responseRate = questSub$responseRateUnit*questSub$responseRateItem
-                                              ,pointCount = pointCount
-                                              ,areaIndividual = areaIndividual
-                                              ,variable1 = variableAcres
-                                              ,variable2 = variableAcres
-                                              ,domain1 = populationIndicator
-                                              ,domain2 = domainIndicator)
-              varProportionAcresInDomain = varianceRatio(acresInDomain, acresInPopulation, varAcresInDomain, varAcresInPopulation, covAcresDomainPopulation)
-              proportionOwnershipsInDomain = ownershipsInDomain/ownershipsInPopulation
-              covOwnershipsDomainPopulation = cov1(areaTotal = areaTotal
-                                                   ,nTotal = nTotal
-                                                   ,responseRate = questSub$responseRateUnit*questSub$responseRateItem
-                                                   ,pointCount = pointCount
-                                                   ,areaIndividual = areaIndividual
-                                                   ,variable1 = variableOwnerships
-                                                   ,variable2 = variableOwnerships
-                                                   ,domain1 = domainIndicator
-                                                   ,domain2 = populationIndicator)
-              varProportionOwnershipsInDomain = varianceRatio(ownershipsInDomain, ownershipsInPopulation, varOwnershipsInDomain, varOwnershipsInPopulation, covOwnershipsDomainPopulation)
+              # Define a default item response rate of 1 in case we get fancy later:
+              QuestSub$ResponseRateItem = 1
               
-              acresInDomainSpecial = NA
-              varAcresInDomainSpecial = NA
+              # Create a dummy indicating where factor variable j is equal to level L:
+              DomainIndicator = ifelse(Domain == Level, 1, 0)
+              DomainSub = QuestSub$DomainOfInterest
               
-              if(table == "table_02__all_private")
+              # For Tables 2-3, we have to do some awkward maneuvering because we're utilizing 3 different FIA area estimates.
+              # For the case of all private acres and ownerships:
+              if(Table == "table_02__ownership_category" & Level == "row_03_Total Private")
               {
-                nPf = stratumInfo$n_pf[i]
-                propAcres = nPf/nTotal
-                responseRate = stratumInfo$urr_fia_pf[i]
-                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
-                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+                AcresInDomain = AcresInPopulation
+                VarAcresInDomain = VarAcresInPopulation
+                OwnershipsOutput = HheCore(AreaFia = AreaFia_i
+                                           ,AreaVarianceFia = AreaVarianceFia_i
+                                           ,PointCount = PointCount
+                                           ,AreaIndividual = AreaIndividual
+                                           ,Variable = VariableOwnerships
+                                           ,Domain = DomainIndicator*DomainSub
+                                           ,ResponseRateItem = QuestSub$ResponseRateItem)              
+              }
+              # For the case Table 2, family:
+              if(Table == "table_02__ownership_category" & Level == "row_01_Family")
+              {
+                AcresInDomain = AreaFiaFam_i
+                VarAcresInDomain = AreaVarianceFiaFam_i
+                OwnershipsOutput = HheCore(AreaFia = AreaFiaFam_i
+                                           ,AreaVarianceFia = AreaVarianceFiaFam_i
+                                           ,PointCount = PointCount[Domain == Level]
+                                           ,AreaIndividual = AreaIndividual[Domain == Level]
+                                           ,Variable = VariableOwnerships[Domain == Level]
+                                           ,Domain = DomainIndicator[Domain == Level]*DomainSub[Domain == Level]
+                                           ,ResponseRateItem = QuestSub$ResponseRateItem[Domain == Level])              
+              }
+              # For the case of Table 2, non-family other private:
+              if(Table == "table_02__ownership_category" & Level == "row_02_Other private")
+              {
+                AcresInDomain = AreaFiaNonfam_i
+                VarAcresInDomain = AreaVarianceFiaNonfam_i
+                OwnershipsOutput = HheCore(AreaFia = AreaFiaNonfam_i
+                                           ,AreaVarianceFia = AreaVarianceFiaNonfam_i
+                                           ,PointCount = PointCount[Domain == Level]
+                                           ,AreaIndividual = AreaIndividual[Domain == Level]
+                                           ,Variable = VariableOwnerships[Domain == Level]
+                                           ,Domain = DomainIndicator[Domain == Level]*DomainSub[Domain == Level]
+                                           ,ResponseRateItem = QuestSub$ResponseRateItem[Domain == Level])              
               }
               
-              if(table == "table_02__fam_other" & level == "row_01_Family")
+              # For the vast marjority of estimation (ie, Tables 4-33) the basic acres and ownerships output is:
+              if(grepl("table_02", Table) == F)
               {
-                nFf = stratumInfo$n_ff[i]
-                propAcres = nFf/nTotal
-                responseRate = stratumInfo$urr_fia_pf[i]
-                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
-                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+                AcresOutput = HheCore(AreaFia = AreaFia_i
+                                      ,AreaVarianceFia = AreaVarianceFia_i
+                                      ,PointCount = PointCount
+                                      ,AreaIndividual = AreaIndividual
+                                      ,Variable = VariableAcres
+                                      ,Domain = DomainIndicator*DomainSub
+                                      ,ResponseRateItem = QuestSub$ResponseRateItem)
+                AcresInDomain = AcresOutput$yHat
+                VarAcresInDomain = AcresOutput$VyHat
+                OwnershipsOutput = HheCore(AreaFia = AreaFia_i
+                                           ,AreaVarianceFia = AreaVarianceFia_i
+                                           ,PointCount = PointCount
+                                           ,AreaIndividual = AreaIndividual
+                                           ,Variable = VariableOwnerships
+                                           ,Domain = DomainIndicator*DomainSub
+                                           ,ResponseRateItem = QuestSub$ResponseRateItem)              
               }
-                            
-              if(table == "table_02__fam_other" & level == "row_02_Other private")
+              OwnershipsInDomain = OwnershipsOutput$yHat
+              VarOwnershipsInDomain = OwnershipsOutput$VyHat
+              
+              # We can get a conditional estimate of covariance between ownerships and acres for estimating the variance of mean size:
+              CovAcresOwnershipsInDomain = CovCore(AreaFia = AreaFia_i
+                                                   ,PointCount = PointCount
+                                                   ,AreaIndividual = AreaIndividual
+                                                   ,Variable1 = VariableAcres
+                                                   ,Variable2 = VariableOwnerships
+                                                   ,Domain1 = DomainIndicator*DomainSub
+                                                   ,Domain2 = DomainIndicator*DomainSub)
+              
+              # With basic domain and population ownership and acre estimates, we can calculate estimates of mean, proportion, etc:
+              MeanAcresInDomain = AcresInDomain/OwnershipsInDomain
+              VarMeanAcresInDomain = VarianceRatio(AcresInDomain, OwnershipsInDomain, VarAcresInDomain, VarOwnershipsInDomain, CovAcresOwnershipsInDomain)
+              ProportionAcresInDomain = AcresInDomain/AcresInPopulation
+              # We have no way of estimating the covariance between acres in domain and acres in population for now:
+              CovAcresDomainPopulation = 0
+              VarProportionAcresInDomain = VarianceRatio(AcresInDomain, AcresInPopulation, VarAcresInDomain, VarAcresInPopulation, CovAcresDomainPopulation)
+              ProportionOwnershipsInDomain = OwnershipsInDomain/OwnershipsInPopulation
+              # Same as above:
+              CovOwnershipsDomainPopulation = 0
+              VarProportionOwnershipsInDomain = VarianceRatio(OwnershipsInDomain, OwnershipsInPopulation, VarOwnershipsInDomain, VarOwnershipsInPopulation, CovOwnershipsDomainPopulation)
+              
+              # Now tack all that on to LevelOut data.frame:
+              LevelOut = rbind(LevelOut, data.frame(Table = Table
+                                                    ,Row = Level
+                                                    ,StateCode = StateCode
+                                                    ,StateName = StateName
+                                                    ,RegionCode = RegionCode
+                                                    ,RegionName = RegionName
+                                                    ,OwnershipsInDomain = OwnershipsInDomain
+                                                    ,VarOwnershipsInDomain = VarOwnershipsInDomain
+                                                    ,AcresInDomain = AcresInDomain
+                                                    ,VarAcresInDomain = VarAcresInDomain
+                                                    ,MeanAcresInDomain = MeanAcresInDomain
+                                                    ,VarMeanAcresInDomain = VarMeanAcresInDomain
+                                                    ,CovAcresOwnershipsInDomain = CovAcresOwnershipsInDomain
+                                                    ,OwnershipsInPopulation = OwnershipsInPopulation
+                                                    ,VarOwnershipsInPopulation = VarOwnershipsInPopulation
+                                                    ,AcresInPopulation = AcresInPopulation
+                                                    ,VarAcresInPopulation = VarAcresInPopulation
+                                                    ,CovAcresDomainPopulation = CovAcresDomainPopulation
+                                                    ,CovOwnershipsDomainPopulation = CovOwnershipsDomainPopulation
+                                                    ,OwnNR = 0
+                                                    ,vOwnNR = 0
+                                                    ,AcNR = 0
+                                                    ,vAcNR = 0
+                                                    ,PropOwnInDomain = 0
+                                                    ,VarPropOwnInDomain = 0
+                                                    ,PropAcInDomain = 0
+                                                    ,VarPropAcInDomain = 0
+                                                    ,ContinuousInDomain = NA
+                                                    ,VarContinuousInDomain = NA
+                                                    ,MeanContinuousOwn = NA
+                                                    ,VarMeanContinuousOwn = NA
+                                                    ,CovContinuousOwn = NA
+                                                    ,MeanContinuousAcre = NA
+                                                    ,VarMeanContinuousAcre = NA
+                                                    ,CovContinuousAcre = NA))
+              if(any(grepl("row_99", LevelOut$Row)) == T)
               {
-                nPfNonfam = stratumInfo$n_pf_nonfam[i]
-                propAcres = nPfNonfam/nTotal
-                responseRate = stratumInfo$urr_fia_pf[i]
-                acresInDomainSpecial = propAcres*(areaTotal/responseRate)
-                varAcresInDomainSpecial = (areaTotal/responseRate)^2*(propAcres*(1 - propAcres)/(nTotal*(nTotal - 1)))
+                RowNR = LevelOut[grepl("row_99", LevelOut$Row),]
+                x = 1
               }
-
-              levelOut = rbind(levelOut, data.frame(table = table
-                                                    ,row = level
-                                                    ,stateCd = stateCd
-                                                    ,stateNm = stateName
-                                                    ,regionCd = regionCd
-                                                    ,regionNm = regionName
-                                                    ,ownershipsInDomain = ownershipsInDomain
-                                                    ,varOwnershipsInDomain = varOwnershipsInDomain
-                                                    ,acresInDomain = acresInDomain
-                                                    ,varAcresInDomain = varAcresInDomain
-                                                    ,acresInDomainSpecial = acresInDomainSpecial
-                                                    ,varAcresInDomainSpecial = varAcresInDomainSpecial
-                                                    ,meanAcresInDomain = meanAcresInDomain
-                                                    ,varMeanAcresInDomain = varMeanAcresInDomain
-                                                    ,covAcresOwnershipsInDomain = covAcresOwnershipsInDomain
-                                                    ,acresInPopulation = acresInPopulation
-                                                    ,varAcresInPopulation = varAcresInPopulation
-                                                    ,proportionAcresInDomain = proportionAcresInDomain
-                                                    ,varProportionAcresInDomain = varProportionAcresInDomain
-                                                    ,covAcresDomainPopulation = covAcresDomainPopulation
-                                                    ,ownershipsInPopulation = ownershipsInPopulation
-                                                    ,varOwnershipsInPopulation = varOwnershipsInPopulation
-                                                    ,proportionOwnershipsInDomain = proportionOwnershipsInDomain
-                                                    ,varProportionOwnershipsInDomain = varProportionOwnershipsInDomain
-                                                    ,covOwnershipsDomainPopulation = covOwnershipsDomainPopulation))
+              else
+              {
+                RowNR = data.frame(OwnershipsInDomain = 0
+                                   ,VarOwnershipsInDomain = 0
+                                   ,AcresInDomain = 0
+                                   ,VarAcresInDomain = 0)
+                x = 0
+              }
+              LevelOut$OwnNR = LevelOut$OwnershipsInPopulation - RowNR$OwnershipsInDomain
+              LevelOut$vOwnNR = LevelOut$VarOwnershipsInPopulation + LevelOut$VarOwnershipsInDomain - 2*LevelOut$CovOwnershipsDomainPopulation*x
+              LevelOut$AcNR = LevelOut$AcresInPopulation - RowNR$AcresInDomain
+              LevelOut$vAcNR = LevelOut$VarAcresInPopulation + LevelOut$VarAcresInDomain - 2*LevelOut$CovAcresDomainPopulation*x
+              LevelOut$PropOwnInDomain = LevelOut$OwnershipsInDomain/LevelOut$OwnNR
+              LevelOut$VarPropOwnInDomain = VarianceRatio(LevelOut$OwnershipsInDomain
+                                                          ,LevelOut$OwnNR
+                                                          ,LevelOut$VarOwnershipsInDomain
+                                                          ,LevelOut$vOwnNR
+                                                          ,LevelOut$CovOwnershipsDomainPopulation)
+              LevelOut$PropAcInDomain = LevelOut$AcresInDomain/LevelOut$AcNR
+              LevelOut$VarPropAcInDomain = VarianceRatio(LevelOut$AcresInDomain
+                                                         ,LevelOut$AcNR
+                                                         ,LevelOut$VarAcresInDomain
+                                                         ,LevelOut$vAcNR
+                                                         ,LevelOut$CovAcresDomainPopulation)
             }
           }
         }
       }
-      variableColumnsOut = rbind(variableColumnsOut, levelOut)
+      VariableColumnsOut = rbind(VariableColumnsOut, LevelOut)
     }
-    statesOut = rbind(statesOut, variableColumnsOut)
+    StatesOut = rbind(StatesOut, VariableColumnsOut)
     if(i == 1)
     {
-      print(paste('estimated total time:', round(nrow(stratumInfo)*(Sys.time() - t0), digits = 0), 'sec.'))
+      print(paste('estimated total time:', round(nrow(AreaFia)*(Sys.time() - t0), digits = 0), 'sec.'))
     }
   }
-  return(statesOut)
+  return(StatesOut)
 }
 
-  
-    
-        
-          
+
+
+
+

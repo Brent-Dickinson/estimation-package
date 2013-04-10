@@ -1,49 +1,49 @@
-regionTables = function(stateTablesOutput, regions = 'default')
+RegionTables = function(StateTablesOutput, Regions = 'default')
 {
-  if(regions == 'default')
+  if(Regions == 'default')
   {
-    stateTablesOutput = stateTablesOutput
+    StateTablesOutput = StateTablesOutput
   }
-  if(regions == 'stupid.temp.comparison.to.2006')
+  if(Regions == 'Comparison')
   {
-    stateTablesOutput = stateTablesOutput[!stateTablesOutput$stateNm %in% c('AK', 'W.OK', 'W.TX', 'NV'),]
+    StateTablesOutput = StateTablesOutput[!as.character(StateTablesOutput$StateName) %in% c('Alaska', 'Oklahoma West', 'Nevada', 'Wyoming', 'Hawaii'),]
   }
-  tableRows = paste(stateTablesOutput$table, stateTablesOutput$row, sep = '@')
-  includeCols = names(stateTablesOutput)[grepl('mean', names(stateTablesOutput), ignore.case = T) == F &
-                                           grepl('proportion', names(stateTablesOutput), ignore.case = T) == F & 
-                                           (grepl('owner', names(stateTablesOutput), ignore.case = T) |
-                                           grepl('acre', names(stateTablesOutput), ignore.case = T))]
-  excludeCols = names(stateTablesOutput)[!names(stateTablesOutput) %in% includeCols]
-  
   require(plyr)
-  US = ddply(stateTablesOutput, .(table, row), numcolwise(sum))
-  US = cbind(US[,1:2], stateCd = NA, stateNm = NA, regionCd = NA, regionNm = 'US', US[,4:ncol(US)])
-  uniqueTableRows = unique(tableRows)
-  US$meanAcresInDomain = US$acresInDomain/US$ownershipsInDomain
-  US$varMeanAcresInDomain = varianceRatio(US$acresInDomain, US$ownershipsInDomain, US$varAcresInDomain, US$varOwnershipsInDomain, US$covAcresOwnershipsInDomain)
-  US$proportionAcresInDomain = US$acresInDomain/US$acresInPopulation
-  US$varProportionAcresInDomain = varianceRatio(US$acresInDomain, US$acresInPopulation, US$varAcresInDomain, US$varAcresInPopulation, US$covAcresDomainPopulation)
-  US$proportionOwnershipsInDomain = US$ownershipsInDomain/US$ownershipsInPopulation
-  US$varProportionOwnershipsInDomain = varianceRatio(US$ownershipsInDomain, US$ownershipsInPopulation, US$varOwnershipsInDomain, US$varOwnershipsInPopulation, US$covOwnershipsDomainPopulation)
+  US = ddply(StateTablesOutput, .(Table, Row), numcolwise(sum), na.rm = T)
+  US = cbind(US[,1:2], StateCode = NA, StateName = NA, RegionCode = NA, RegionName = 'US', US[,3:ncol(US)])
+  US$MeanAcresInDomain = US$AcresInDomain/US$OwnershipsInDomain
+  US$VarMeanAcresInDomain = VarianceRatio(US$AcresInDomain, US$OwnershipsInDomain, US$VarAcresInDomain, US$VarOwnershipsInDomain, US$CovAcresOwnershipsInDomain)
+  US$PropAcInDomain = US$AcresInDomain/US$AcNR
+  US$VarPropAcInDomain = VarianceRatio(US$AcresInDomain, US$AcNR, US$VarAcresInDomain, US$vAcNR, US$CovAcresDomainPopulation)
+  US$PropOwnInDomain = US$OwnershipsInDomain/US$OwnNR
+  US$VarPropOwnInDomain = VarianceRatio(US$OwnershipsInDomain, US$OwnNR, US$VarOwnershipsInDomain, US$vOwnNR, US$CovOwnershipsDomainPopulation)
+  US$MeanContinuousOwn = ifelse(grepl("Continuous", US$Row) == F, NA, US$ContinuousInDomain/US$OwnershipsInDomain)
+  US$VarMeanContinuousOwn = ifelse(grepl("Continuous", US$Row) == F, NA, VarianceRatio(US$ContinuousInDomain, US$OwnershipsInDomain, US$VarContinuousInDomain, US$VarOwnershipsInDomain, US$CovContinuousOwn))
+  US$MeanContinuousAcre = ifelse(grepl("Continuous", US$Row) == F, NA, US$ContinuousInDomain/US$AcresInDomain)
+  US$VarMeanContinuousOwn = ifelse(grepl("Continuous", US$Row) == F, NA, VarianceRatio(US$ContinuousInDomain, US$AcresInDomain, US$VarContinuousInDomain, US$VarAcresInDomain, US$CovContinuousAcre))
   
-  regionsCd = unique(stateTablesOutput$regionCd)
-  regionsNm = unique(stateTablesOutput$regionNm)
-  for(R in 1:length(regionsCd))
+  RegionCodes = unique(StateTablesOutput$RegionCode)
+  RegionNames = unique(StateTablesOutput$RegionName)
+  for(R in 1:length(RegionCodes))
   {
-    regionCd_R = regionsCd[R]
-    regionNm_R = regionsNm[R]
-    regionRoutput = stateTablesOutput[stateTablesOutput$regionCd == regionCd_R,]
-    tableRows = paste(regionRoutput$table, regionRoutput$row, sep = '@')
-    uniqueTableRows = unique(tableRows)
-    regionR = ddply(regionRoutput, .(table, row), numcolwise(sum))
-    regionR = cbind(regionR[,1:2], stateCd = NA, stateNm = NA, regionCd = regionCd_R, regionNm = regionNm_R, regionR[,4:ncol(regionR)])
-    regionR$meanAcresInDomain = regionR$acresInDomain/regionR$ownershipsInDomain
-    regionR$varMeanAcresInDomain = varianceRatio(regionR$acresInDomain, regionR$ownershipsInDomain, regionR$varAcresInDomain, regionR$varOwnershipsInDomain, regionR$covAcresOwnershipsInDomain)
-    regionR$proportionAcresInDomain = regionR$acresInDomain/regionR$acresInPopulation
-    regionR$varProportionAcresInDomain = varianceRatio(regionR$acresInDomain, regionR$acresInPopulation, regionR$varAcresInDomain, regionR$varAcresInPopulation, regionR$covAcresDomainPopulation)
-    regionR$proportionOwnershipsInDomain = regionR$ownershipsInDomain/regionR$ownershipsInPopulation
-    regionR$varProportionOwnershipsInDomain = varianceRatio(regionR$ownershipsInDomain, regionR$ownershipsInPopulation, regionR$varOwnershipsInDomain, regionR$varOwnershipsInPopulation, regionR$covOwnershipsDomainPopulation)
-    US = rbind(US, regionR)
+    RegionCode_R = RegionCodes[R]
+    RegionName_R = RegionNames[R]
+    RegionRoutput = StateTablesOutput[StateTablesOutput$RegionCode == RegionCode_R,]
+    RegionR = ddply(RegionRoutput, .(Table, Row), numcolwise(sum), na.rm = T)
+    RegionR = cbind(RegionR[,1:2], StateCode = NA, StateName = NA, RegionCode = RegionCode_R, RegionName = RegionName_R, RegionR[,3:ncol(RegionR)])
+    RegionR$MeanAcresInDomain = RegionR$AcresInDomain/RegionR$OwnershipsInDomain
+    RegionR$VarMeanAcresInDomain = VarianceRatio(RegionR$AcresInDomain, RegionR$OwnershipsInDomain, RegionR$VarAcresInDomain, RegionR$VarOwnershipsInDomain, RegionR$CovAcresOwnershipsInDomain)
+    RegionR$PropAcInDomain = RegionR$AcresInDomain/RegionR$AcNR
+    RegionR$VarPropAcInDomain = VarianceRatio(RegionR$AcresInDomain, RegionR$AcNR, RegionR$VarAcresInDomain, RegionR$vAcNR, RegionR$CovAcresDomainPopulation)
+    RegionR$PropOwnInDomain = RegionR$OwnershipsInDomain/RegionR$OwnNR
+    RegionR$VarPropOwnInDomain = VarianceRatio(RegionR$OwnershipsInDomain, RegionR$OwnNR, RegionR$VarOwnershipsInDomain, RegionR$vOwnNR, RegionR$CovOwnershipsDomainPopulation)
+    RegionR$MeanContinuousOwn = ifelse(grepl("Continuous", RegionR$Row) == F, NA, RegionR$ContinuousInDomain/RegionR$OwnershipsInDomain)
+    RegionR$VarMeanContinuousOwn = ifelse(grepl("Continuous", RegionR$Row) == F, NA, VarianceRatio(RegionR$ContinuousInDomain, RegionR$OwnershipsInDomain, RegionR$VarContinuousInDomain, RegionR$VarOwnershipsInDomain, RegionR$CovContinuousOwn))
+    RegionR$MeanContinuousAcre = ifelse(grepl("Continuous", RegionR$Row) == F, NA, RegionR$ContinuousInDomain/RegionR$AcresInDomain)
+    RegionR$VarMeanContinuousOwn = ifelse(grepl("Continuous", RegionR$Row) == F, NA, VarianceRatio(RegionR$ContinuousInDomain, RegionR$AcresInDomain, RegionR$VarContinuousInDomain, RegionR$VarAcresInDomain, RegionR$CovContinuousAcre))
+    
+    US = rbind(US, RegionR)
   }
+  US = US[US$OwnershipsInDomain > 0,]
   return(US)
 }
